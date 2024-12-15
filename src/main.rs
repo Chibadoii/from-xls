@@ -1,54 +1,34 @@
+mod dto;
+use calamine::{
+    open_workbook, DataType, DeError, Range, RangeDeserializer, RangeDeserializerBuilder, Reader,
+    Xls, Xlsx,
+};
+use dto::TestStruct;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::Path;
-use calamine::{open_workbook, DataType, DeError, Range, RangeDeserializerBuilder, Reader, Xls, Xlsx};
-use serde::{Serialize, Deserialize};
+use sqlx::postgres::PgPoolOptions;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct TestStruct{
-    #[serde(default)]
-    column1: Option<String>,
-    #[serde(default)]
-    column2: Option<String>,
-}
-
-impl TestStruct {
-    fn new (column1: String, column2: String) -> Self {
-        Self{
-            column1,
-            column2,
-        }
-    }
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filename = std::env::args().skip(1).collect::<Vec<_>>();
     let path = Path::new(&filename[0]);
     let mut workbook: Xls<_> = open_workbook(path)?;
 
-    let range = workbook.worksheet_range("Sheet1")
+    let range = workbook
+        .worksheet_range("Sheet1")
         .ok_or(calamine::Error::Msg("Cannot find 'Sheet1'"))??;
 
-    processing(path.file_name().unwrap(), range);
+    processing(path.file_name().unwrap().to_str().unwrap(), range).await?;
+    Ok(())
 }
 
-fn processing(filename: &OsStr , range: Range<DataType>) -> Result<(), Box<dyn std::error::Error>>{
-    let mut iter = RangeDeserializerBuilder::new().has_headers(false).from_range(&range)?;
+async fn processing(filename: &str, range: Range<DataType>) -> Result<(), Box<dyn std::error::Error>> {
+    let iter = RangeDeserializerBuilder::new()
+        .has_headers(false)
+        .from_range(&range)?;
+    let values: Vec<TestStruct> = iter.map(|item| item.unwrap()).collect();
+    println!("values: {:?}", values);
 
-    match filename.to_str().unwrap() {
-        "test" => {},
-        _ => {}
-    }
-
-    if let Some(result) = iter.next() {
-        let _ = processing(result);
-        Ok(())
-    } else {
-        Err(From::from("expected at least one record but got none"))
-    }
-
-    let storage: Vec<String> = value?;
-    for item in storage {
-        println!("{:?}", item);
-    }
-    Ok(())
+   //TODO вытаскиваем определенные поля  и закидываем бд
 }
