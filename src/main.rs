@@ -1,12 +1,19 @@
 mod dto;
-use sqlx::{query, Connection, Executor, PgConnection};
-use calamine::{
-    open_workbook, DataType, DeError, Range, RangeDeserializer, RangeDeserializerBuilder, Reader,
-    Xls, Xlsx,
-};
-use serde::{Deserialize, Serialize};
+use calamine::{open_workbook, DataType, Range, RangeDeserializerBuilder, Reader, Xls};
 use dto::AllColumnStruct;
+use sqlx::{Connection, Executor, PgConnection};
 use std::path::Path;
+
+//temporary
+async fn create_table(pg_con: &mut PgConnection) -> Result<(), Box<dyn std::error::Error>> {
+    let res = pg_con.execute("drop table if exists testing_sk").await?;
+    println!("{res:?}");
+    let res = pg_con.execute("create table if not exists testing_sk (id integer primary key, field1 text, field2 integer, field3 text)").await?;
+    println!("{res:?}");
+    // let res = pg_con.execute("insert into testing_sk (id, field1, field2, field3) values (1, 'firsttxt', 1, 'sectxt')").await?;
+    // println!("{res:?}");
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,18 +25,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .worksheet_range("Sheet1")
         .ok_or(calamine::Error::Msg("Cannot find 'Sheet1'"))??;
 
-    let mut pg_con = sqlx::PgConnection::connect("postgres://tester:tester@localhost/testbase").await?;
+    let mut pg_con =
+        sqlx::PgConnection::connect("postgres://tester:tester@localhost/testbase").await?;
     let _ = create_table(&mut pg_con).await;
 
-    let value = write_xls(path.file_name().unwrap().to_str().unwrap(), &range)?;
-    value.into_iter().for_each(|row| {});
-
+    let from_xls = write_xls(&range)?;
+    send_row(from_xls, &mut pg_con).await?;
     Ok(())
 }
 
-fn write_xls(filename: &str, range: &Range<DataType>) -> Result<Vec<AllColumnStruct>, Box<dyn std::error::Error>> {
-    let mut iter = RangeDeserializerBuilder::new()
-        .has_headers(false)
+fn write_xls(range: &Range<DataType>) -> Result<Vec<AllColumnStruct>, Box<dyn std::error::Error>> {
+    let iter = RangeDeserializerBuilder::new()
+        .has_headers(true)
         .from_range(range)?;
 
     let data: Vec<AllColumnStruct> = iter.map(|item| item.unwrap()).collect();
@@ -37,12 +44,12 @@ fn write_xls(filename: &str, range: &Range<DataType>) -> Result<Vec<AllColumnStr
     Ok(data)
 }
 
-async fn create_table(pg_con: &mut PgConnection) -> Result<(), Box<dyn std::error::Error>> {
-    let res = pg_con.execute("drop table if exists testing_sk").await?;
-    println!("{res:?}");
-    let res = pg_con.execute("create table if not exists testing_sk (id integer primary key, field1 text, field2 integer, field3 text)").await?;
-    println!("{res:?}");
-    let res = pg_con.execute("insert into testing_sk (id, field1, field2, field3) values (1, 'firsttxt', 1, 'sectxt')").await?;
-    println!("{res:?}");
+async fn send_row(
+    from_xls: Vec<AllColumnStruct>,
+    pg_con: &mut PgConnection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for row in from_xls {
+        row.plan_version(pg_con).await
+    }
     Ok(())
 }
