@@ -30,7 +30,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = create_table(&mut pg_con).await;
 
     let from_xls = write_xls(&range)?;
-    send_row(from_xls, &mut pg_con).await?;
+    for row in from_xls {
+        one_row_all_table(from_xls, &mut pg_con).await?;
+    }
     Ok(())
 }
 
@@ -44,7 +46,7 @@ fn write_xls(range: &Range<DataType>) -> Result<Vec<AllColumnStruct>, Box<dyn st
     Ok(data)
 }
 
-async fn send_row(
+async fn one_row_all_table(
     from_xls: Vec<AllColumnStruct>,
     pg_con: &mut PgConnection,
 ) -> Result<(), Box<dyn std::error::Error>> {
