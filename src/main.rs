@@ -1,11 +1,11 @@
 mod dto;
-//use sqlx::Connection;
+use sqlx::{query, Connection, Executor, PgConnection};
 use calamine::{
     open_workbook, DataType, DeError, Range, RangeDeserializer, RangeDeserializerBuilder, Reader,
     Xls, Xlsx,
 };
 use serde::{Deserialize, Serialize};
-use dto::TestStruct;
+use dto::AllColumnStruct;
 use std::path::Path;
 
 #[tokio::main]
@@ -18,38 +18,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .worksheet_range("Sheet1")
         .ok_or(calamine::Error::Msg("Cannot find 'Sheet1'"))??;
 
-    //let pg_pool = sqlx::PgPool::connect("postgresql://postgres:postgres@localhost/library").await?;
-    let _res = processing_example(path.file_name().unwrap().to_str().unwrap(), &range);
-    processing(path.file_name().unwrap().to_str().unwrap(), &range)
-}
+    let mut pg_con = sqlx::PgConnection::connect("postgres://tester:tester@localhost/testbase").await?;
+    let _ = create_table(&mut pg_con).await;
 
-fn processing_example(
-    filename: &str,
-    range: &Range<DataType>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut iter: RangeDeserializer<DataType, Vec<String>> = RangeDeserializerBuilder::new()
-        .has_headers(false)
-        .from_range(&range)?;
-
-    if let Some(result) = iter.next() {
-        let storage: Vec<String> = result?;
-        for item in storage {
-            dbg!(item);
-        }
-    }
+    let value = write_xls(path.file_name().unwrap().to_str().unwrap(), &range)?;
+    value.into_iter().for_each(|row| {});
 
     Ok(())
 }
 
-fn processing(filename: &str, range: &Range<DataType>) -> Result<(), Box<dyn std::error::Error>> {
-    let mut iter: RangeDeserializer<DataType, Vec<String>> = RangeDeserializerBuilder::new()
+fn write_xls(filename: &str, range: &Range<DataType>) -> Result<Vec<AllColumnStruct>, Box<dyn std::error::Error>> {
+    let mut iter = RangeDeserializerBuilder::new()
         .has_headers(false)
         .from_range(range)?;
 
-    match filename {
-        "test.xls" => {println!("{:?}", TestStruct::new(iter))},
-        _ => {}
-    }
+    let data: Vec<AllColumnStruct> = iter.map(|item| item.unwrap()).collect();
+    println!("{data:?}");
+    Ok(data)
+}
 
+async fn create_table(pg_con: &mut PgConnection) -> Result<(), Box<dyn std::error::Error>> {
+    let res = pg_con.execute("drop table if exists testing_sk").await?;
+    println!("{res:?}");
+    let res = pg_con.execute("create table if not exists testing_sk (id integer primary key, field1 text, field2 integer, field3 text)").await?;
+    println!("{res:?}");
+    let res = pg_con.execute("insert into testing_sk (id, field1, field2, field3) values (1, 'firsttxt', 1, 'sectxt')").await?;
+    println!("{res:?}");
     Ok(())
 }
